@@ -1,63 +1,54 @@
 import os
 import re
-from bs4 import BeautifulSoup
 import shutil
 import urllib.request
 import zipfile
 import io
 import tempfile
+from bs4 import BeautifulSoup
 
 def fix_gallery_paths(html_file):
-    # Read the HTML file
     with open(html_file, 'r', encoding='utf-8') as f:
         content = f.read()
-    
-    # Parse HTML
     soup = BeautifulSoup(content, 'html.parser')
-    
-    # Fix image paths in gallery items
-    gallery_items = soup.select('.fg-item a')
-    for item in gallery_items:
-        if 'href' in item.attrs:
-            href = item['href']
-            if href.startswith('wp-content/'):
-                item['href'] = '../' + href
-    
-    # Fix image src paths
-    images = soup.select('img')
-    for img in images:
-        if 'data-src-fg' in img.attrs:
-            src = img['data-src-fg']
-            if src.startswith('wp-content/'):
-                img['data-src-fg'] = '../' + src
-    
-    # Fix CSS and JS paths
-    css_links = soup.select('link[href*="wp-content"]')
-    for link in css_links:
-        href = link['href']
-        if href.startswith('wp-content/'):
-            link['href'] = '../' + href
-    
-    js_scripts = soup.select('script[src*="wp-content"]')
-    for script in js_scripts:
-        src = script['src']
-        if src.startswith('wp-content/'):
-            script['src'] = '../' + src
-    
-    # Write the modified HTML back
-    with open(html_file, 'w', encoding='utf-8') as f:
-        f.write(str(soup))
+    modified = False
+    for img in soup.find_all('img'):
+        if img.get('src') and img['src'].startswith('wp-content/'):
+            img['src'] = '/' + img['src']
+            modified = True
+    if modified:
+        with open(html_file, 'w', encoding='utf-8') as f:
+            f.write(str(soup))
+        print(f"Fixed paths in {html_file}")
 
-def download_file(url, dest_path):
-    try:
-        with urllib.request.urlopen(url) as response:
-            with open(dest_path, 'wb') as f:
-                f.write(response.read())
-        print(f"Downloaded {url} to {dest_path}")
-        return True
-    except Exception as e:
-        print(f"Error downloading {url}: {str(e)}")
-        return False
+def fix_all_image_paths():
+    for root, dirs, files in os.walk('.'):
+        for file in files:
+            if file.endswith('.html'):
+                html_file = os.path.join(root, file)
+                fix_gallery_paths(html_file)
+
+def copy_gallery_assets():
+    # Create necessary directories
+    os.makedirs('wp-content/plugins/foogallery/extensions/default-templates/shared/css', exist_ok=True)
+    os.makedirs('wp-content/plugins/foogallery/extensions/default-templates/shared/js', exist_ok=True)
+    os.makedirs('wp-content/plugins/foobox-image-lightbox/free/css', exist_ok=True)
+    os.makedirs('wp-content/plugins/foobox-image-lightbox/free/js', exist_ok=True)
+
+    # List of required files
+    required_files = [
+        'wp-content/plugins/foogallery/extensions/default-templates/shared/css/foogallery.min.css',
+        'wp-content/plugins/foogallery/extensions/default-templates/shared/js/foogallery.min.js',
+        'wp-content/plugins/foobox-image-lightbox/free/css/foobox.free.min.css',
+        'wp-content/plugins/foobox-image-lightbox/free/js/foobox.free.min.js'
+    ]
+
+    # Check if files exist in WordPress installation
+    for file in required_files:
+        if os.path.exists(file):
+            print(f"File {file} already exists, skipping...")
+        else:
+            print(f"Warning: {file} not found in WordPress installation")
 
 def setup_gallery_assets():
     # Create necessary directories
@@ -65,35 +56,26 @@ def setup_gallery_assets():
     os.makedirs('wp-content/plugins/foogallery/extensions/default-templates/shared/js', exist_ok=True)
     os.makedirs('wp-content/plugins/foobox-image-lightbox/free/css', exist_ok=True)
     os.makedirs('wp-content/plugins/foobox-image-lightbox/free/js', exist_ok=True)
-    
-    # Download FooGallery files
-    foogallery_files = {
+
+    # Download required files
+    files_to_download = {
         'wp-content/plugins/foogallery/extensions/default-templates/shared/css/foogallery.min.css': 'https://raw.githubusercontent.com/fooplugins/foogallery/master/extensions/default-templates/shared/css/foogallery.min.css',
-        'wp-content/plugins/foogallery/extensions/default-templates/shared/js/foogallery.min.js': 'https://raw.githubusercontent.com/fooplugins/foogallery/master/extensions/default-templates/shared/js/foogallery.min.js'
-    }
-    
-    # Download FooBox files
-    foobox_files = {
+        'wp-content/plugins/foogallery/extensions/default-templates/shared/js/foogallery.min.js': 'https://raw.githubusercontent.com/fooplugins/foogallery/master/extensions/default-templates/shared/js/foogallery.min.js',
         'wp-content/plugins/foobox-image-lightbox/free/css/foobox.free.min.css': 'https://raw.githubusercontent.com/fooplugins/foobox/master/free/css/foobox.free.min.css',
         'wp-content/plugins/foobox-image-lightbox/free/js/foobox.free.min.js': 'https://raw.githubusercontent.com/fooplugins/foobox/master/free/js/foobox.free.min.js'
     }
-    
-    # Download all files
-    for dest_path, url in {**foogallery_files, **foobox_files}.items():
-        if not os.path.exists(dest_path):
-            download_file(url, dest_path)
+
+    for file_path, url in files_to_download.items():
+        if not os.path.exists(file_path):
+            try:
+                urllib.request.urlretrieve(url, file_path)
+                print(f"Downloaded {file_path}")
+            except Exception as e:
+                print(f"Error downloading {file_path}: {e}")
 
 def main():
-    # Fix paths in index.html
-    if os.path.exists('index.html'):
-        fix_gallery_paths('index.html')
-        print("Fixed paths in index.html")
-    
-    # Fix paths in bilder/index.html
-    if os.path.exists('bilder/index.html'):
-        fix_gallery_paths('bilder/index.html')
-        print("Fixed paths in bilder/index.html")
-    
+    # Fix paths in all HTML files
+    fix_all_image_paths()
     # Setup gallery assets
     setup_gallery_assets()
 
